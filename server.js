@@ -27,7 +27,7 @@ let newGame = true;
 let timeoutId;
 
 
-fs.readdir('./public/fig', (err, files) => {
+fs.readdirSync('./public/fig', (err, files) => {
     if (err) throw err;
     figNum = files.filter((file) => {
         return fs.statSync(file).isFile(); //絞り込み
