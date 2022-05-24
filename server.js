@@ -11,37 +11,37 @@ const server = express()
     .listen(PORT, () => console.log(`Listening on ${PORT}`));
 
 const wss = new Server({ server });
-const clients = new Set([0]);
+const clients = new Set();
 
-let figNum; // 写真の総数
 const WAIT = 2; // 待ち時間
 const MAX_NAME_LENGTH = 20; // 名前の長さの最大値
 const LIMIT = 10; // 1問にかけられる時間のlimit
 const COUNT_DOWN = 3;
-let dict = Array(figNum).fill(''); // dict[i]: i枚目の写真の名前
 let figId; // 今どの写真見てるか
 let quizIdx = 0; // 今何問目
-let namingId;
-let acceptInput;
+let namingId = -1;
+let acceptInput = false;
 let newGame = true;
 let timeoutId;
 
+const figNum = fs.readdirSync('./public/fig', { withFileTypes: true }).length;
+const dict = Array(figNum).fill('');
 
-fs.readdirSync('./public/fig', (err, files) => {
-    if (err) throw err;
-    figNum = files.filter((file) => {
-        return fs.statSync(file).isFile(); //絞り込み
-    }).length;
-});
 
 wss.on('connection', (ws) => {
     console.log('Client connected');
     ws.on('message', message => {
         let ms = JSON.parse(message);
+        console.log(ms);
         switch (ms.message) {
             case 'first connection':
-                ws.id = Math.max(...clients) + 1;
-                clients.add(ws.id);
+                if (clients.size == 0) {
+                    ws.id = 0;
+                    clients.add(ws.id);
+                } else {
+                    ws.id = Math.max(...clients) + 1;
+                    clients.add(ws.id);
+                }
                 ws.send(JSON.stringify({ message: 'press key' }));
                 break;
             case 'name':
@@ -94,6 +94,7 @@ function checkAnswer(input, id) {
 
 function giveNamingRight(keyCode, id) {
     if (keyCode === 'Enter') {
+        acceptInput = false;
         namingId = id;
         sendTo({ message: 'input name' }, namingId);
     }
@@ -105,6 +106,7 @@ function nameFig(input, id) {
     if (id != namingId) return;
     if (isValidName(input)) {
         dict[figId] = input;
+        namingId = -1;
         sendAll({ message: 'given name', figId: figId, name: input });
         setTimeout(() => {
             newQuiz(WAIT); // 出題
@@ -127,7 +129,7 @@ function islower(chr) {
 }
 
 function isValidName(name) {
-    if (dict[figId].length <= 0 || dict[figId].length > MAX_NAME_LENGTH) {
+    if (name.length <= 0 || name.length > MAX_NAME_LENGTH) {
         return false;
     }
     for (const c of name) {
@@ -157,6 +159,7 @@ function newQuiz(wait) {
         } else {
             sendAll({ message: 'new fig', figId: figId });
             sendAll({ message: 'press key' });
+            acceptInput = true;
         }
     }, wait * 1000);
 }
