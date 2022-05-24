@@ -3,6 +3,7 @@
 const express = require('express');
 const { json } = require('express/lib/response');
 const { Server } = require('ws');
+const fs = require('fs');
 
 const PORT = process.env.PORT || 3000;
 const INDEX = '/pages/';
@@ -12,19 +13,28 @@ const server = express()
     .listen(PORT, () => console.log(`Listening on ${PORT}`));
 
 const wss = new Server({ server });
-const playerId = new Set();
-const player = {};
-const canvas = { width: 300, height: 500 };
-const malletRadius = 15;
-const puck = {
-    radius: 10,
-    position: { x: canvas.width / 2, y: canvas.height / 2 },
-    velocity: { x: 0, y: 0 }
-};
-const animateTime = 50;
-let game = true;
-let p1Status = '';
-let p2Status = '';
+const clients = new Set([0])
+
+let figNum; // 写真の総数
+const WAIT = 2; // 待ち時間
+const MAX_NAME_LENGTH = 20; // 名前の長さの最大値
+const LIMIT = 10; // 1問にかけられる時間のlimit
+const COUNT_DOWN = 3;
+let dict = Array(figNum).fill(''); // dict[i]: i枚目の写真の名前
+let figId; // 今どの写真見てるか
+let quizIdx = 0; // 今何問目
+let namingId;
+let acceptInput;
+let newGame = true
+let timeoutId;
+
+
+fs.readdir('./public/fig', (err, files) => {
+    if (err) throw err;
+    figNum = files.filter((file) => {
+        return fs.statSync(file).isFile(); //絞り込み
+    }).length;
+});
 
 wss.on('connection', (ws) => {
     console.log('Client connected');
@@ -32,136 +42,137 @@ wss.on('connection', (ws) => {
         let ms = JSON.parse(message);
         switch (ms.message) {
             case 'first connection':
-                ws.id = ms.id;
-                if (playerId.size < 2) {
-                    playerId.add(ms.id);
-                    player[ms.id] = { x: canvas.width / 2, y: canvas.height - 30 };
-                }
+                ws.id = Math.max(...clients) + 1;
+                clients.add(ws.id);
+                ws.send(JSON.stringify({ message: 'press key' }));
                 break;
-            case 'move':
-                if (playerId.has(ms.id)) {
-                    player[ms.id] = ms.coord;
-                }
+            case 'name':
+                nameFig(ms.input, ws.id);
                 break;
-            case 'start':
-                if (puck.velocity.x == 0 && puck.velocity.y == 0) {
-                    puck.velocity.x = 0;
-                    puck.velocity.y = 10;
-                }
-                game = true;
+            case 'answer':
+                checkAnswer(ms.input, ws.id)
                 break;
-            case 'reset':
-                if (puck.velocity.x == 0 && puck.velocity.y == 0) {
-                    puck.position.x = canvas.width / 2;
-                    puck.position.y = canvas.height / 2;
+            case 'key':
+                if (acceptInput) {
+                    giveNamingRight(ms.keyCode, ws.id);
+                } else if (newGame) {
+                    gameStart(ms.keyCode, ws.id);
                 }
-                game = true;
                 break;
         }
     });
     ws.on('close', () => {
         console.log('Client disconnected');
-        playerId.delete(ws.id);
+        clients.delete(ws.id);
     });
 });
 
-setInterval(() => {
-    if (game) {
-        calcPosition();
-        wss.clients.forEach((client) => {
-            let p1, p2, puckPos;
-            if (playerId.has(client.id)) {
-                let opponent = [...playerId].filter(e => (e != client.id))[0];
-                p1 = client.id;
-                p2 = opponent;
-                if ([...playerId][0] === client.id) {
-                    puckPos = puck.position;
-                } else {
-                    puckPos = reverse(puck.position);
-                }
+
+function gameStart(keyCode, id) {
+    if (keyCode === 'Enter' && id === Math.min(...clients)) {
+        newGame = false;
+        sendAll({ message: 'game start' });
+        setTimeout(() => {
+            newQuiz(0)
+        }, COUNT_DOWN * 1000);
+    };
+}
+
+function checkAnswer(input, id) {
+    if (input === dict[figId]) {
+        clearTimeout(timeoutId);
+        wss.clients.forEach(ws => {
+            if (ws.id == id) {
+                ws.send(JSON.stringify({ message: 'correct answer' }));
             } else {
-                [p1, p2] = [...playerId];
-                puckPos = puck.position;
+                ws.send(JSON.stringify({ message: 'failed' }))
             }
-            client.send(JSON.stringify({
-                p1: player[p1],
-                p2: reverse(player[p2]),
-                puck: puckPos,
-                message: 'ongame'
-            }));
-        });
-    } else {
-        wss.clients.forEach((ws) => {
-            switch (ws.id) {
-                case [...playerId][0]:
-                    ws.send(JSON.stringify({ message: p1Status }));
-                    break;
-                case [...playerId][1]:
-                    ws.send(JSON.stringify({ message: p2Status }));
-                    break;
-                default:
-                    break;
-            }
-        });
+        })
+        quizIdx += 1
+        newQuiz(WAIT); // 出題
     }
-}, animateTime);
+}
 
-function calcPosition() {
-    for (let id of [...playerId]) {
-        let pos;
-        if ([...playerId][0] === id) {
-            pos = player[id];
+
+function giveNamingRight(keyCode, id) {
+    if (keyCode === 'Enter') {
+        namingId = id;
+        sendTo({ message: 'input name' }, namingId);
+    }
+}
+
+
+function nameFig(input, id) {
+    // 命名完了
+    if (id != namingId) return;
+    if (isValidName(input)) {
+        dict[figId] = input;
+        sendAll({ message: 'given name', figId: figId, name: input });
+        setTimeout(() => {
+            newQuiz(WAIT); // 出題
+        }, WAIT);
+    }
+    else {
+        sendTo({ message: 'invalid input' }, id);
+    }
+}
+
+
+// [0, mx)のランダムな整数を返す
+function randint(mx) {
+    return Math.floor(Math.random() * mx);
+}
+
+// chrが小文字化判定する
+function islower(chr) {
+    return chr.length === 1 && 'a' <= chr && chr <= 'z';
+}
+
+function isValidName(name) {
+    if (dict[figId].length <= 0 || dict[figId].length > MAX_NAME_LENGTH) {
+        return false;
+    }
+    for (const c of name) {
+        if (!islower(c)) {
+            return false;
+        }
+    }
+    return true;
+}
+
+
+// 画面をクリアしてwait秒待ってからfigId番目の画像を出題
+function newQuiz(wait) {
+    figId = randint(figNum);
+    sendAll({ message: 'clear' });
+    setTimeout(() => {
+        if (dict[figId]) {
+            sendAll({
+                message: 'quiz',
+                figId: figId,
+                answer: dict[figId]
+            });
+            timeoutId = setTimeout(() => {
+                sendAll({ message: 'failed' });
+                newQuiz(wait);
+            }, LIMIT * 1000);
         } else {
-            pos = reverse(player[id]);
+            sendAll({ message: 'new fig', figId: figId });
+            sendAll({ message: 'press key' });
         }
-        if (distance2(puck.position, pos) <= (puck.radius + malletRadius) ** 2) {
-            let vec = {
-                x: puck.position.x - pos.x,
-                y: puck.position.y - pos.y
-            };
-            puck.velocity = reflect(puck.velocity, vec);
+    }, wait * 1000);
+}
+
+function sendAll(message) {
+    wss.clients.forEach(ws => {
+        ws.send(JSON.stringify(message));
+    });
+}
+
+function sendTo(message, id) {
+    wss.clients.forEach(ws => {
+        if (ws.id == id) {
+            ws.send(JSON.stringify(message));
         }
-    }
-    puck.position.x += puck.velocity.x;
-    puck.position.y += puck.velocity.y;
-    if (puck.position.x < puck.radius) {
-        puck.velocity = reflect(puck.velocity, { x: 1, y: 0 });
-    } else if (puck.position.x > canvas.width - puck.radius) {
-        puck.velocity = reflect(puck.velocity, { x: -1, y: 0 });
-    }
-    if (puck.position.y < puck.radius) {
-        p1Status = 'win';
-        p2Status = 'lose';
-        puck.velocity = { x: 0, y: 0 };
-        game = false;
-    } else if (canvas.height - puck.radius < puck.position.y) {
-        p1Status = 'lose';
-        p2Status = 'win';
-        puck.velocity = { x: 0, y: 0 };
-        game = false;
-    }
-}
-
-function distance2(pos1, pos2) {
-    return (pos1.x - pos2.x) ** 2 + (pos1.y - pos2.y) ** 2;
-}
-
-function reflect(vel, vec) {
-    let len = Math.sqrt(vec.x ** 2 + vec.y ** 2);
-    let n = { x: vec.x / len, y: vec.y / len };
-    let prod = vel.x * n.x + vel.y * n.y;
-    return {
-        x: vel.x - 2 * prod * n.x,
-        y: vel.y - 2 * prod * n.y
-    };
-}
-
-function reverse(pos) {
-    if (!pos) {
-        return;
-    }
-    return {
-        x: canvas.width - pos.x,
-        y: canvas.height - pos.y
-    };
+    });
 }
