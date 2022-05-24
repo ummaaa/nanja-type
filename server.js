@@ -1,19 +1,17 @@
 'use strict';
 
 const express = require('express');
-const { json } = require('express/lib/response');
 const { Server } = require('ws');
 const fs = require('fs');
 
 const PORT = process.env.PORT || 3000;
-const INDEX = '/pages/';
 
 const server = express()
     .use(express.static('public'))
     .listen(PORT, () => console.log(`Listening on ${PORT}`));
 
 const wss = new Server({ server });
-const clients = new Set([0])
+const clients = new Set([0]);
 
 let figNum; // 写真の総数
 const WAIT = 2; // 待ち時間
@@ -25,7 +23,7 @@ let figId; // 今どの写真見てるか
 let quizIdx = 0; // 今何問目
 let namingId;
 let acceptInput;
-let newGame = true
+let newGame = true;
 let timeoutId;
 
 
@@ -50,7 +48,7 @@ wss.on('connection', (ws) => {
                 nameFig(ms.input, ws.id);
                 break;
             case 'answer':
-                checkAnswer(ms.input, ws.id)
+                checkAnswer(ms.input, ws.id);
                 break;
             case 'key':
                 if (acceptInput) {
@@ -73,9 +71,9 @@ function gameStart(keyCode, id) {
         newGame = false;
         sendAll({ message: 'game start' });
         setTimeout(() => {
-            newQuiz(0)
+            newQuiz(0);
         }, COUNT_DOWN * 1000);
-    };
+    }
 }
 
 function checkAnswer(input, id) {
@@ -85,10 +83,10 @@ function checkAnswer(input, id) {
             if (ws.id == id) {
                 ws.send(JSON.stringify({ message: 'correct answer' }));
             } else {
-                ws.send(JSON.stringify({ message: 'failed' }))
+                ws.send(JSON.stringify({ message: 'failed' }));
             }
         })
-        quizIdx += 1
+        quizIdx += 1;
         newQuiz(WAIT); // 出題
     }
 }
