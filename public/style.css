@@ -1,0 +1,15 @@
+.game {
+    height: 500px;
+    margin-left: auto;
+    margin-right: auto;
+    width: 100vw;
+    margin: auto;
+}
+
+h1 {
+    text-align: center;
+}
+
+h2 {
+    text-align: center;
+}

@@ -16,7 +16,7 @@ const clients = new Set();
 const WAIT = 2; // 待ち時間
 const MAX_NAME_LENGTH = 20; // 名前の長さの最大値
 const LIMIT = 10; // 1問にかけられる時間のlimit
-const COUNT_DOWN = 3;
+const COUNT_DOWN = 4;
 let figId; // 今どの写真見てるか
 let quizIdx = 0; // 今何問目
 let namingId = -1;
@@ -112,9 +112,7 @@ function nameFig(input, id) {
         dict[figId] = input;
         namingId = -1;
         sendAll({ message: 'given name', figId: figId, name: input });
-        setTimeout(() => {
-            newQuiz(WAIT); // 出題
-        }, WAIT);
+        newQuiz(WAIT); // 出題
     }
     else {
         sendTo({ message: 'invalid input' }, id);
@@ -127,19 +125,10 @@ function randint(mx) {
     return Math.floor(Math.random() * mx);
 }
 
-// chrが小文字化判定する
-function islower(chr) {
-    return chr.length === 1 && 'a' <= chr && chr <= 'z';
-}
 
 function isValidName(name) {
     if (name.length <= 0 || name.length > MAX_NAME_LENGTH) {
         return false;
-    }
-    for (const c of name) {
-        if (!islower(c)) {
-            return false;
-        }
     }
     return true;
 }
@@ -148,8 +137,8 @@ function isValidName(name) {
 // 画面をクリアしてwait秒待ってからfigId番目の画像を出題
 function newQuiz(wait) {
     figId = randint(figNum);
-    sendAll({ message: 'clear' });
     setTimeout(() => {
+        sendAll({ message: 'clear' });
         if (dict[figId]) {
             sendAll({
                 message: 'quiz',
