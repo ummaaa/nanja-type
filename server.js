@@ -37,11 +37,10 @@ wss.on('connection', (ws) => {
             case 'first connection':
                 if (clients.size == 0) {
                     ws.id = 0;
-                    clients.add(ws.id);
                 } else {
                     ws.id = Math.max(...clients) + 1;
-                    clients.add(ws.id);
                 }
+                clients.add(ws.id);
                 ws.send(JSON.stringify({ message: 'press key' }));
                 break;
             case 'name':
@@ -52,9 +51,9 @@ wss.on('connection', (ws) => {
                 break;
             case 'key':
                 if (acceptInput) {
-                    giveNamingRight(ms.keyCode, ws.id);
+                    giveNamingRight(ms.key, ws.id);
                 } else if (newGame) {
-                    gameStart(ms.keyCode, ws.id);
+                    gameStart(ms.key, ws.id);
                 }
                 break;
         }
@@ -66,8 +65,8 @@ wss.on('connection', (ws) => {
 });
 
 
-function gameStart(keyCode, id) {
-    if (keyCode === 'Enter' && id === Math.min(...clients)) {
+function gameStart(key, id) {
+    if (key === 'Enter' && id === Math.min(...clients)) {
         newGame = false;
         sendAll({ message: 'game start' });
         setTimeout(() => {
@@ -85,18 +84,23 @@ function checkAnswer(input, id) {
             } else {
                 ws.send(JSON.stringify({ message: 'failed' }));
             }
-        })
+        });
         quizIdx += 1;
         newQuiz(WAIT); // 出題
     }
 }
 
 
-function giveNamingRight(keyCode, id) {
-    if (keyCode === 'Enter') {
+function giveNamingRight(key, id) {
+    if (key === 'Enter') {
         acceptInput = false;
         namingId = id;
-        sendTo({ message: 'input name' }, namingId);
+        wss.clients.forEach(ws => {
+            ws.send(JSON.stringify({
+                message: 'input name',
+                isOk: ws.id == namingId
+            }));
+        });
     }
 }
 
@@ -158,7 +162,6 @@ function newQuiz(wait) {
             }, LIMIT * 1000);
         } else {
             sendAll({ message: 'new fig', figId: figId });
-            sendAll({ message: 'press key' });
             acceptInput = true;
         }
     }, wait * 1000);
